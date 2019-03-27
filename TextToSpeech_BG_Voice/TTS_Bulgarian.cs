@@ -20,7 +20,7 @@ namespace TextToSpeech_BG_Voice
     // There is a ROS action server providing the Bulgarian speech functionality,
     // which connects to this code using MQTT messages. 
 
-    class Program
+    class TTS_Bulgarian
     {
         private static SpeechSynthesizer synth = new SpeechSynthesizer();
 
@@ -30,7 +30,22 @@ namespace TextToSpeech_BG_Voice
             //Install-Package M2Mqtt -Version 4.3.0
 
             // MQTT client setup
+
+            // Change default MQTT broker address here
             string BrokerAddress = "192.168.10.107";
+
+            if (args.Length == 1)
+            {
+                BrokerAddress = args[0];
+                System.Console.WriteLine("Setting broker IP to: " + BrokerAddress);
+            }
+            else
+            {
+                System.Console.WriteLine("To change the default broker IP use: TTS_Bulgarian \"MQTT_broker_IP\"");
+                System.Console.WriteLine("Setting broker IP to: " + BrokerAddress);
+            }
+
+
             var client = new MqttClient(BrokerAddress);
 
             // register a callback-function called by the library when a message was received
