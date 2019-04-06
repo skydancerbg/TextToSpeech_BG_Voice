@@ -12,83 +12,112 @@ using uPLibrary.Networking.M2Mqtt.Messages;
 
 namespace TextToSpeech_BG_Voice
 {
-    // Stefan SRG 27.3.2019
-    // There is no Bulgarian Voice in Ubuntu. 
-    // As a workaround, we are forced to start a Windows VM
-    // and synthesize the speech there, playing it back on the Robco robot speakers
-    // using bluetooth connection
-    // There is a ROS action server providing the Bulgarian speech functionality,
-    // which connects to this code using MQTT messages. 
+
+
+
+    //#     #################################
+    //#     # 
+    //#     # Created by Stefan 
+    //#     # SRG - Service Robotics Group Bulgaria
+    //#     # Version 1.0 from Apr. 6th, 2019.
+    //#     #
+    //#     #################################
+    //#
+    //#     There is no good Bulgarian Voice in Ubuntu. 
+    //#     As a workaround, we are forced to start a Windows VM
+    //#     and synthesize the speech there, playing it back on the Robco robot speakers
+    //#     over a bluetooth connection
+    //#     There is a ROS action server providing the Bulgarian speech functionality,
+    //#     which connects to this code using MQTT messages.
+    //#     
+    //#     #################################
+    //#     
+    //#     # On the ROS side:
+    //#     # Set serializer/deserializer in mqtt_bridge: /home/robcoctrl/catkin_ws/src/mqtt_bridge/config/openhab_tts_stt_params.yaml
+    //#     # to:   serializer: json:dumps        deserializer: json: loads
+    //#
+    //# ########## Publish/Subscribe to TTS (Text To Speech) Bulgarian topics ROS/MQTT communication ##########
+    //# //////////////////////////////////////////////////////////////////////////////////////////////////////
+    //# //
+    //# // ROS topics: 
+    //# //        /ttsbg_ros/tts_text           String
+    //# //        /ttsbg_ros/command            String
+    //# //        /ttsbg_ros/response           String
+    //# // MQTT topics: 
+    //# //          /ttsbg_mqtt/tts_text        String
+    //# //          /ttsbg_mqtt/command         String
+    //# //          /ttsbg_mqtt/response        String
+    //# //
+    //# // The mqtt_bridge ROS package is set to transfer the messages between ROS and the MQTT broker, between the corrresponding topics
+    //# // These topics are configured in ROS mqtt_bridge package, in /home/<your user>/catkin_ws/src/mqtt_bridge/config/openhab_tts_stt_params.yaml
+    //# // In the same config file, set serializer/deserializer for mqtt_bridge to:   serializer: json:dumps        deserializer: json: loads
+    //# ///////////////////////////////////////////////////////////////////////////////////////////////////////
+    //#     # If cloning from GitHub, You can find the required Daria Voice 
+    //#     # in the SRG shared directory
+    //#     #
+    //#     # You can bye DARIA NUANCE VOICE from: https://harposoftware.com/en/bulgarian/179-Daria-Nuance-Voice.html
+    //#     #################################
+
+
+
+    //https://www.nuget.org/packages/M2Mqtt/
+    //Install-Package M2Mqtt -Version 4.3.0
+
 
     class TTS_Bulgarian
     {
         private static SpeechSynthesizer synth = new SpeechSynthesizer();
+        private static bool enableSpeaking = false;
+        private static MqttClient mqttClient;
 
         static void Main(string[] args)
         {
-            //https://www.nuget.org/packages/M2Mqtt/
-            //Install-Package M2Mqtt -Version 4.3.0
-
             // MQTT client setup
 
-            // Change default MQTT broker address here
-            string BrokerAddress = "192.168.10.2";
+            // Change the default MQTT broker address here
+            string BrokerAddress = "192.168.1.2";
 
             if (args.Length == 1)
             {
                 BrokerAddress = args[0];
-                System.Console.WriteLine("Setting broker IP to: " + BrokerAddress);
+                System.Console.WriteLine("Setting MQTT broker IP to: " + BrokerAddress);
             }
             else
             {
-                System.Console.WriteLine("To change the default broker IP use: TTS_Bulgarian \"MQTT_broker_IP\"");
-                System.Console.WriteLine("Setting broker IP to: " + BrokerAddress);
+                System.Console.WriteLine("To change the broker IP use: TTS_Bulgarian \"MQTT_broker_IP\"");
+                System.Console.WriteLine("Setting MQTT broker IP to: " + BrokerAddress);
             }
 
-
-            //var client = new MqttClient(BrokerAddress);
-            var client = new MqttClient("192.168.1.2");
+            mqttClient = new MqttClient(BrokerAddress);
 
 
-            // register a callback-function called by the library when a message was received
-            client.MqttMsgPublishReceived += client_messageReceived;
+            // register a callback-function called by the M2MQTT library when a message was received
+            mqttClient.MqttMsgPublishReceived += client_messageReceived;
             
             var clientId = Guid.NewGuid().ToString();
+
             //TODO create new user pass for the MQTT broker adn replace the one below! 
             // supply - user, pass for the MQTT broker
-            client.Connect(clientId, "openhabian", "robko123");
+            mqttClient.Connect(clientId, "openhabian", "robko123");
 
-            //////////////////////////////////////////////////////////////////////////////////////////////////////
-            //
-            // ROS topics: 
-            //        /ttsbg_ros/tts_text
-            //        /ttsbg_ros/command
-            //        /ttsbg_ros/response    
-            // MQTT topics: 
-            //          /ttsbg_mqtt/tts_text
-            //          /ttsbg_mqtt/command
-            //          /ttsbg_mqtt/
-            // 
-            // mqtt_bridge ROS package is set to transfer the messages between ROS and the MQTT broker in both directions
-            // Topics have to be setup in mqtt_bridge package in /home/robcoctrl/catkin_ws/src/mqtt_bridge/config/openhab_tts_params.yaml
-            //
-            ///////////////////////////////////////////////////////////////////////////////////////////////////////
 
-            // Subscribe to the required MQTT topics with QoS 2
             // There is a bug when you specify more than one topic at the same time???
             //https://stackoverflow.com/questions/39917469/exception-of-type-uplibrary-networking-m2mqtt-exceptions-mqttclientexception-w
             //client.Subscribe(
             //    new string[] { "/ttsbg_mqtt/tts_text", "/ttsbg_mqtt/command" },
             //    new byte[] { MqttMsgBase.QOS_LEVEL_AT_LEAST_ONCE });
-            client.Subscribe(new string[] { "/ttsbg_mqtt/tts_text" }, new byte[] { MqttMsgBase.QOS_LEVEL_EXACTLY_ONCE });
+
+            // Subscribe to the MQTT topics with QoS 2
+            mqttClient.Subscribe(new string[] { "/ttsbg_mqtt/tts_text" }, new byte[] { MqttMsgBase.QOS_LEVEL_EXACTLY_ONCE });
             //client.Subscribe(new string[] { "/ttsbg_mqtt/command" }, new byte[] { MqttMsgBase.QOS_LEVEL_EXACTLY_ONCE });
 
             synth.SetOutputToDefaultAudioDevice();
-
+            
+            // Choose the voice to speak with:
             //synth.SelectVoice("Vocalizer Expressive Daria Harpo 22kHz");
             synth.SelectVoice("VE_Bulgarian_Daria_22kHz");
-
             //synth.SelectVoice("Microsoft Zira Desktop");
+
         }
         static void client_messageReceived(object sender, MqttMsgPublishEventArgs e)
         {
@@ -100,14 +129,9 @@ namespace TextToSpeech_BG_Voice
             Console.OutputEncoding = System.Text.Encoding.UTF8;
 
             // Handle the received message
-             
-            ////Console.WriteLine("raw message= " + Encoding.UTF8.GetString(e.Message) + "      on topic " + e.Topic);
-            var stringLenght = Encoding.UTF8.GetString(e.Message).Length;
 
-            //The MQTT client in ROS includes ' "��data�", ' infront of the message payload
-            //Here we remove 7 symbols - ��data� from the message ("��data�", "") and get only the string payload
-            string messageText = Encoding.UTF8.GetString(e.Message).Substring(9, stringLenght - 9);
-            Console.WriteLine("Text to be spoken received => " + Encoding.UTF8.GetString(e.Message).Substring(9, stringLenght - 9));
+            string messageText = ((Encoding.UTF8.GetString(e.Message)).Replace("{\"data\": \"", "")).Replace("\"}", "");
+            Console.WriteLine("Text to be spoken received => " + messageText);
 
             //Branch based on the incoming messages topic e.Topic.
             if (e.Topic == "/ttsbg_mqtt/tts_text")
@@ -116,20 +140,41 @@ namespace TextToSpeech_BG_Voice
                 var current = synth.GetCurrentlySpokenPrompt();
                 if (current != null)
                     synth.SpeakAsyncCancel(current);
-                // Speak out the string. 
-                speak(messageText);
-                //TODO
-                // Publish started speaking response to the MQTT response topic
-                //string strResponse = "speaking";
-                //client.Publish("/tts_bg_mqtt/command", Encoding.UTF8.GetBytes(strResponse), MqttMsgBase.QOS_LEVEL_EXACTLY_ONCE);
+                if (enableSpeaking)
+                {
+                    // Speak out the string. 
+                    SpeakAsync(messageText);
+
+                    //TODO refine the command/response scheme
+
+                    mqttClient.Publish("/ttsbg_mqtt/response", Encoding.UTF8.GetBytes("{\"data\": \"" + "speaking" + "\"}"), MqttMsgBase.QOS_LEVEL_EXACTLY_ONCE, true);
+                }
 
             }
             else if (e.Topic == "/ttsbg_mqtt/command")
             {
-                if (messageText == "cancel")
+                if (messageText == "enable")
                 {
+                    enableSpeaking = true;
+                    mqttClient.Publish("/ttsbg_mqtt/response", Encoding.UTF8.GetBytes("{\"data\": \"" + "enabled" + "\"}"), MqttMsgBase.QOS_LEVEL_EXACTLY_ONCE, true);
+
+                }
+                else if (messageText == "disable")
+                {
+                    enableSpeaking = false;
+                    cancelSpeaking();
+                    mqttClient.Publish("/ttsbg_mqtt/response", Encoding.UTF8.GetBytes("{\"data\": \"" + "disabled" + "\"}"), MqttMsgBase.QOS_LEVEL_EXACTLY_ONCE, true);
+
+                }
+                else if (messageText == "cancel")
+                {
+                    // Cancel if currently speaking
                     cancelSpeaking();
                 }
+                //else
+                //{
+
+                //}
             }
         }
 
@@ -146,7 +191,7 @@ namespace TextToSpeech_BG_Voice
 
         }
 
-        private static void speak(string messageText)
+        private static void SpeakAsync(string messageText)
         {
             synth.SpeakAsync(messageText);
         }
